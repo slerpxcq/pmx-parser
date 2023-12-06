@@ -1,1 +1,2 @@
-# PMX model parser for OpenGL
+# pmx-parser
+PMX model parser for OpenGL
