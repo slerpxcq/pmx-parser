@@ -129,14 +129,28 @@ typedef struct
 	} limit;
 } PMXIKLink;
 
+#define BONE_FLAG_CONNECTED (1U << 0)
+#define BONE_FLAG_ROTATABLE (1U << 1)
+#define BONE_FLAG_MOVEABLE (1U << 2)
+#define BONE_FLAG_DISPLAY (1U << 3)
+#define BONE_FLAG_OPERATABLE (1U << 4)
+#define BONE_FLAG_IK (1U << 5)
+#define BONE_FLAG_LINK_DEFORM (1U << 7)
+#define BONE_FLAG_LINK_ROTATION (1U << 8)
+#define BONE_FLAG_LINK_MOVE (1U << 9)
+#define BONE_FLAG_FIXED_AXIS (1U << 10)
+#define BONE_FLAG_LOCAL_AXIS (1U << 11)
+#define BONE_FLAG_PHYSICAL_TRANSFORM (1U << 12)
+#define BONE_FLAG_EXT_PARENT_TRANSFORM (1U << 13)
+
 typedef struct 
 {
 	PMXText name_jp;
 	PMXText name_en;
 	float pos[3];
 	uint32_t parent;
-	uint32_t xfm_layer;
-        uint16_t flag;
+	uint32_t transform_layer;
+        uint16_t flags;
 	union {
 		uint32_t target;
 		float offset[3];
@@ -291,10 +305,50 @@ const char *pmx_parse_mat(const char *src, PMXMat *dst, size_t count)
 	return src;
 }
 
+const char *pmx_parse_ik(const char *src, PMXIKLink *dst, size_t count);
+
 const char *pmx_parse_bone(const char *src, PMXBone *dst, size_t count)
 {
 	for (size_t i = 0; i < count; ++i) {
-		src = get_field(src, 	
+		src = get_text(src, &dst[i].name_jp);
+		src = get_text(src, &dst[i].name_en);
+		src = get_field(src, dst[i].pos, sizeof(float), 3);
+		src = get_field(src, &dst[i].parent, header.bone_idx_size, 1);
+		src = get_field(src, &dst[i].transform_layer, sizeof(uint32_t), 1);
+		src = get_field(src, &dst[i].flags, sizeof(uint16_t), 1);
+
+		uint16_t flags = dst[i].flags;
+		if (flags & BONE_FLAG_CONNECTED) 
+			src = get_field(src, &dst[i].tip.target, header.bone_idx_size, 1);
+		else
+			src = get_field(src, &dst[i].tip.offset, sizeof(float), 3);
+		
+		if (flags & BONE_FLAG_LINK_ROTATION || flags & BONE_FLAG_LINK_MOVE) {
+			src = get_field(src, &dst[i].link.idx, header.bone_idx_size, 1);
+			src = get_field(src, &dst[i].link.rate, sizeof(float), 1);
+		}
+
+		if (flags & BONE_FLAG_FIXED_AXIS)
+			src = get_field(src, &dst[i].fixed_axis, sizeof(float), 3);
+
+		if (flags & BONE_FLAG_LOCAL_AXIS)
+			src = get_field(src, &dst[i].local_axis, sizeof(float), 3);
+
+		if (flags & BONE_FLAG_EXT_PARENT_TRANSFORM)
+			src = get_field(src, &dst[i].ext_parent_key, sizeof(uint32_t), 1);
+
+		if (flags & BONE_FLAG_IK) {
+			src = get_field(src, &dst[i].ik.idx, header.bone_idx_size, 1);
+			src = get_field(src, &dst[i].ik.loop, sizeof(uint32_t), 1);
+			src = get_field(src, &dst[i].ik.limit_angle, sizeof(float), 1);
+			src = get_field(src, &dst[i].ik.link_count, sizeof(uint32_t), 1);
+			
+			size_t link_count = dst[i].ik.link_count;
+			if (link_count > 0) {
+				dst[i].ik.links = malloc(link_count * sizeof(PMXIKLink));
+				src = pmx_parse_ik(src, dst[i].ik.links, link_count);
+			}
+		}	
 	}
 
 	return src;
@@ -302,6 +356,15 @@ const char *pmx_parse_bone(const char *src, PMXBone *dst, size_t count)
 
 const char *pmx_parse_ik(const char *src, PMXIKLink *dst, size_t count)
 {
+	for (size_t i = 0; i < count; ++i) {
+		src = get_field(src, &dst[i].idx, header.bone_idx_size, 1);
+		src = get_field(src, &dst[i].has_limit, sizeof(uint8_t), 1);
+		if (dst[i].has_limit) {
+			src = get_field(src, &dst[i].limit.lower, sizeof(float), 3);
+			src = get_field(src, &dst[i].limit.upper, sizeof(float), 3);
+		}
+	}
+
 	return src;
 }
 
