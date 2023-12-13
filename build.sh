@@ -1,2 +1,2 @@
 #!/bin/sh
-gcc parser.c -o parser && ./parser
+clear && gcc parser.c -o parser -Wall -pedantic -std=gnu11 && ./parser
