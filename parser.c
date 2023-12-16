@@ -6,14 +6,18 @@
 #include <float.h>
 #include <assert.h>
 
+#define CVECTOR_LOGARITHMIC_GROWTH
+#include "cvector.h"
+
 #define NDEBUG
 #ifdef NDEBUG
-#define DBG_LOG(x, ...) fprintf(stderr, (x), __VA_ARGS__)
+#define DBG_LOG(...) fprintf(stderr, __VA_ARGS__)
 #else
-#define DBG_LOG(x, ...)
+#define DBG_LOG(...)
 #endif
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 #define MAX_TEXT_LEN 64
 #define ERROR_MSG_LEN 128
@@ -174,6 +178,70 @@ typedef struct
 	} ik;
 } PMXBone;
 
+typedef enum
+{
+	MORPH_TYPE_GROUP = 0,
+	MORPH_TYPE_VERTEX,
+	MORPH_TYPE_BONE,
+	MORPH_TYPE_UV,
+	MORPH_TYPE_ADD_UV_1,
+	MORPH_TYPE_ADD_UV_2,
+	MORPH_TYPE_ADD_UV_3,
+	MORPH_TYPE_ADD_UV_4,
+	MORPH_TYPE_MATERIAL,
+	MORPH_TYPE_FLIP,
+	MORPH_TYPE_IMPULSE
+} PMXMorphType;
+
+typedef union {
+	struct {
+		uint32_t idx;
+		float rate;
+	} group_flip;
+	struct {
+		uint32_t idx;
+		float offset[3];
+	} vertex;
+	struct {
+		uint32_t idx;
+		float move[3];
+		float rotation[4];
+	} bone;
+	struct {
+		uint32_t idx;
+		float offset[4];
+	} uv;
+	struct {
+		uint32_t idx;
+		uint8_t method;
+		float diffuse[4];
+		float specular[3];
+		float power;
+		float ambient[3];
+		float edge[4];
+		float edge_size;
+		float tex_tint[4];
+		float env_tint[4];
+		float toon_tint[4];
+	} material;
+	struct {
+		uint32_t idx;
+		uint8_t local;
+		float velocity[3];
+		float torque[3];
+	} impulse;
+} PMXMorphOffset; 
+
+typedef struct 
+{
+	PMXText name_jp;
+	PMXText name_en;
+	uint8_t panel;
+	uint8_t type;
+	uint32_t offset_count;
+	PMXMorphOffset *offsets;
+} PMXMorph;
+
 typedef struct 
 {
 	PMXHeader header;
@@ -191,9 +259,10 @@ const char *get_field(const char *src, void *dst, size_t size, size_t count);
 const char *get_text(const char *src, PMXText *dst)
 {
 	uint32_t len;
-	src = get_field(src, &len, sizeof(len), 1);
+
+	src = get_field(src, &len, sizeof(uint32_t), 1);
 	dst->len = len;
-	strncpy(dst->text, src, MAX(sizeof(dst->text), len));
+	memcpy(dst->text, src, MIN(len, MAX_TEXT_LEN));
 	src += len;
 	return src;
 }
@@ -214,7 +283,7 @@ const char *get_field(const char *src, void *dst, size_t size, size_t count)
 				*(uint32_t *)dst = *(uint32_t *)src;
 				src += sizeof(uint32_t);
 				break;
-			defalut:	
+			default:	
 				return NULL;
 		}
 	}
@@ -261,7 +330,6 @@ const char *pmx_parse_vert(const char *src, PMXVert *dst, size_t count)
 				return NULL;
 		}
 		src = get_field(src, &dst[i].edge_scale, sizeof(float), 1);	
-		// DBG_LOG("Vertex %zu: (%.2f, %.2f, %.2f)\n", i, dst[i].pos[0], dst[i].pos[1], dst[i].pos[2]);
 	}
 
 	return src;
@@ -331,8 +399,10 @@ const char *pmx_parse_bone(const char *src, PMXBone *dst, size_t count)
 		if (flags & BONE_FLAG_FIXED_AXIS)
 			src = get_field(src, &dst[i].fixed_axis, sizeof(float), 3);
 
-		if (flags & BONE_FLAG_LOCAL_AXIS)
-			src = get_field(src, &dst[i].local_axis, sizeof(float), 3);
+		if (flags & BONE_FLAG_LOCAL_AXIS) {
+			src = get_field(src, &dst[i].local_axis.x, sizeof(float), 3);
+			src = get_field(src, &dst[i].local_axis.z, sizeof(float), 3);
+		}
 
 		if (flags & BONE_FLAG_EXT_PARENT_TRANSFORM)
 			src = get_field(src, &dst[i].ext_parent_key, sizeof(uint32_t), 1);
@@ -345,7 +415,7 @@ const char *pmx_parse_bone(const char *src, PMXBone *dst, size_t count)
 			
 			size_t link_count = dst[i].ik.link_count;
 			if (link_count > 0) {
-				dst[i].ik.links = malloc(link_count * sizeof(PMXIKLink));
+				dst[i].ik.links = calloc(link_count, sizeof(PMXIKLink));
 				src = pmx_parse_ik(src, dst[i].ik.links, link_count);
 			}
 		}	
@@ -368,8 +438,82 @@ const char *pmx_parse_ik(const char *src, PMXIKLink *dst, size_t count)
 	return src;
 }
 
+const char *pmx_parse_morph_offset(const char *src, PMXMorphOffset *dst, uint8_t type, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		switch (type) {
+			case MORPH_TYPE_GROUP:
+			case MORPH_TYPE_FLIP:
+				src = get_field(src, &dst[i].group_flip.idx, header.rb_idx_size, 1);
+				src = get_field(src, &dst[i].group_flip.rate, sizeof(uint8_t), 1);
+				break;
+			case MORPH_TYPE_VERTEX:
+				src = get_field(src, &dst[i].vertex.idx, header.vert_idx_size, 1);
+				src = get_field(src, &dst[i].vertex.offset, sizeof(float), 3);
+				break;
+			case MORPH_TYPE_BONE:
+				src = get_field(src, &dst[i].bone.idx, header.bone_idx_size, 1);
+				src = get_field(src, &dst[i].bone.move, sizeof(float), 3);
+				src = get_field(src, &dst[i].bone.rotation, sizeof(float), 4);
+				break;
+			case MORPH_TYPE_UV:
+			case MORPH_TYPE_ADD_UV_1:
+			case MORPH_TYPE_ADD_UV_2:
+			case MORPH_TYPE_ADD_UV_3:
+			case MORPH_TYPE_ADD_UV_4:
+				src = get_field(src, &dst[i].uv.idx, header.vert_idx_size, 1);
+				src = get_field(src, &dst[i].uv.offset, sizeof(float), 4);
+				break;
+			case MORPH_TYPE_MATERIAL:
+				src = get_field(src, &dst[i].material.idx, header.mat_idx_size, 1);
+				src = get_field(src, &dst[i].material.method, sizeof(uint8_t), 1);
+				src = get_field(src, &dst[i].material.diffuse, sizeof(float), 4);
+				src = get_field(src, &dst[i].material.specular, sizeof(float), 3);
+				src = get_field(src, &dst[i].material.power, sizeof(float), 1);
+				src = get_field(src, &dst[i].material.ambient, sizeof(float), 3);
+				src = get_field(src, &dst[i].material.edge, sizeof(float), 4);
+				src = get_field(src, &dst[i].material.edge_size, sizeof(float), 1);
+				src = get_field(src, &dst[i].material.tex_tint, sizeof(float), 4);
+				src = get_field(src, &dst[i].material.env_tint, sizeof(float), 4);
+				src = get_field(src, &dst[i].material.toon_tint, sizeof(float), 4);
+				break;
+			case MORPH_TYPE_IMPULSE:
+				src = get_field(src, &dst[i].impulse.idx, header.rb_idx_size, 1);
+				src = get_field(src, &dst[i].impulse.local, sizeof(uint8_t), 1);
+				src = get_field(src, &dst[i].impulse.velocity, sizeof(float), 3);
+				src = get_field(src, &dst[i].impulse.torque, sizeof(float), 3);
+				break;
+			default:
+				return NULL;
+		}
+	}
+
+	return src;
+}
+
+const char *pmx_parse_morph(const char *src, PMXMorph *dst, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		src = get_text(src, &dst[i].name_jp);
+		src = get_text(src, &dst[i].name_en);
+		src = get_field(src, &dst[i].panel, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].offset_count, header.morph_idx_size, 1);
+		
+		uint32_t offset_count = dst[i].offset_count;
+		if (offset_count > 0) {
+			dst[i].offsets = malloc(offset_count * sizeof(PMXMorphOffset));
+			assert(dst[i].offsets);
+			src = pmx_parse_morph_offset(src, dst[i].offsets, dst[i].offset_count);	
+		}	
+	}
+
+	return src;
+}
+
 uint8_t pmx_parse(const char *src, PMXModel *dst)
 {
+	DBG_LOG(" ********** PMX Parser **********\n");
 	if (strncmp(src, "PMX ", 4)) {
 		snprintf(error_msg, ERROR_MSG_LEN, "Not a pmx file\n");
 		return 1;
@@ -417,8 +561,17 @@ uint8_t pmx_parse(const char *src, PMXModel *dst)
 	DBG_LOG("Material count: %u\n", mat_count);
 	PMXMat *mats = calloc(mat_count, sizeof(PMXMat));
 	src = pmx_parse_mat(src, mats, mat_count);
-	assert(mat);
+	assert(mats);
 
+	uint32_t bone_count;
+	src = get_field(src, &bone_count, sizeof(bone_count), 1);
+	DBG_LOG("Bone count: %u\n", bone_count);
+	PMXBone *bones = calloc(bone_count, sizeof(PMXBone));
+	src = pmx_parse_bone(src, bones, bone_count);
+	assert(bones);
+
+	
+	free(bones);
 	free(texs);	
 	free(faces);
 	free(verts);
@@ -438,7 +591,6 @@ int main(void)
 	fseek(fp, 0, SEEK_END);
 	size_t filesize = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	DBG_LOG("Size: %zu\n", filesize);
 
 	model = (char *)malloc(filesize);
 	if (!model) {
