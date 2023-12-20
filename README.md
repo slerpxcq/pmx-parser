@@ -1,5 +1,5 @@
 # pmx-parser
-PMX model parser in C
+PMX model parser in C\
 See [pmx_parser.h](pmx_parser.h) for struct definitions.
 ## Usage
 ```C
