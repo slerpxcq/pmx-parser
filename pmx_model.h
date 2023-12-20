@@ -345,6 +345,7 @@ typedef struct
 
 uint8_t pmx_parse(const char *src, PMXModel *dst);
 void pmx_free(PMXModel *model);
+const char *pmx_get_error_msg(void);
 
 #ifdef __cplusplus
 }

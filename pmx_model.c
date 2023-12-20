@@ -479,4 +479,9 @@ void pmx_free(PMXModel *model)
 	}
 }
 
+const char *pmx_get_error_msg(void)
+{
+	return error_msg;
+}
+
 
