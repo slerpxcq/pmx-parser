@@ -242,6 +242,81 @@ typedef struct
 	PMXMorphOffset *offsets;
 } PMXMorph;
 
+typedef enum
+{
+	FRAME_ELEM_TYPE_BONE = 0,
+	FRAME_ELEM_TYPE_MORPH
+} PMXFrameElemType;
+
+typedef struct 
+{
+	uint8_t type;
+	uint32_t idx;
+} PMXFrameElement;
+
+typedef struct 
+{
+	PMXText name_jp;
+	PMXText name_en;
+	uint8_t special;
+	uint32_t elem_count;
+	PMXFrameElement *elems;
+} PMXFrame;
+
+typedef enum
+{
+	RIGIDBODY_SHAPE_SPHERE = 0,
+	RIGIDBODY_SHAPE_BOX,
+	RIGIDBODY_SHAPE_CAPSULE
+} PMXRigidBodyShape;
+
+typedef enum
+{
+	RIGIDBODY_TYPE_STATIC = 0,
+	RIGIDBODY_TYPE_DYNAMIC,
+	RIGIDBODY_TYPE_COMBINE
+} PMXRigidBodyType;
+
+typedef struct
+{
+	PMXText name_jp;
+	PMXText name_en;
+	uint32_t bone_idx;
+	uint8_t group;
+	uint16_t no_collide_group;
+	uint8_t shape;
+	float shape_size[3];
+	float pos[3];
+	float rot[3];
+	float mass;
+	float move_decay;
+	float rot_decay;
+	float elastic;
+	float friction;
+	uint8_t type;
+} PMXRigidBody;
+
+typedef struct
+{
+	PMXText name_jp;
+	PMXText name_en;
+	uint8_t type;
+	uint32_t idx1;
+	uint32_t idx2;
+	float pos[3];
+	float rot[3];
+	struct __attribute__((packed)) {
+		float lower[3];
+		float upper[3];
+	} pos_limit;
+	struct __attribute__((packed)) {
+		float lower[3];
+		float upper[3];
+	} rot_limit;
+	float spring_pos[3];
+	float spring_rot[3];
+} PMXJoint;
+
 typedef struct 
 {
 	PMXHeader header;
@@ -498,14 +573,92 @@ const char *pmx_parse_morph(const char *src, PMXMorph *dst, size_t count)
 		src = get_text(src, &dst[i].name_en);
 		src = get_field(src, &dst[i].panel, sizeof(uint8_t), 1);
 		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
-		src = get_field(src, &dst[i].offset_count, header.morph_idx_size, 1);
-		
+		src = get_field(src, &dst[i].offset_count, sizeof(uint32_t), 1);
 		uint32_t offset_count = dst[i].offset_count;
 		if (offset_count > 0) {
 			dst[i].offsets = malloc(offset_count * sizeof(PMXMorphOffset));
 			assert(dst[i].offsets);
-			src = pmx_parse_morph_offset(src, dst[i].offsets, dst[i].offset_count);	
+			src = pmx_parse_morph_offset(src, dst[i].offsets, dst[i].type, dst[i].offset_count);	
 		}	
+	}
+
+	return src;
+}
+
+const char *pmx_parse_frame_elem(const char *src, PMXFrameElement *dst, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
+		switch (dst[i].type) {
+		case FRAME_ELEM_TYPE_BONE:
+			src = get_field(src, &dst[i].idx, header.bone_idx_size, 1);
+			break;
+		case FRAME_ELEM_TYPE_MORPH:
+			src = get_field(src, &dst[i].idx, header.morph_idx_size, 1);
+			break;
+		default:
+			return NULL;
+		}
+	}
+
+	return src;
+}
+
+const char *pmx_parse_frame(const char *src, PMXFrame *dst, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		src = get_text(src, &dst[i].name_jp);
+		src = get_text(src, &dst[i].name_en);
+		src = get_field(src, &dst[i].special, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].elem_count, sizeof(uint32_t), 1);
+		uint32_t elem_count = dst[i].elem_count;
+		if (elem_count > 0) {
+			dst[i].elems = malloc(elem_count * sizeof(PMXFrameElement));
+			assert(dst[i].elems);
+			src = pmx_parse_frame_elem(src, dst[i].elems, elem_count);
+		}
+	}
+
+	return src;
+}
+
+const char *pmx_parse_rigidbody(const char *src, PMXRigidBody *dst, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		src = get_text(src, &dst[i].name_jp);
+		src = get_text(src, &dst[i].name_en);
+		src = get_field(src, &dst[i].bone_idx, header.bone_idx_size, 1);
+		src = get_field(src, &dst[i].group, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].no_collide_group, sizeof(uint16_t), 1);
+		src = get_field(src, &dst[i].shape, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].shape_size, sizeof(float), 3);
+		src = get_field(src, &dst[i].pos, sizeof(float), 3);
+		src = get_field(src, &dst[i].rot, sizeof(float), 3);
+		src = get_field(src, &dst[i].mass, sizeof(float), 1);
+		src = get_field(src, &dst[i].move_decay, sizeof(float), 1);
+		src = get_field(src, &dst[i].rot_decay, sizeof(float), 1);
+		src = get_field(src, &dst[i].elastic, sizeof(float), 1);
+		src = get_field(src, &dst[i].friction, sizeof(float), 1);
+		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
+	}
+
+	return src;
+}
+
+const char *pmx_parse_joint(const char *src, PMXJoint *dst, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) {
+		src = get_text(src, &dst[i].name_jp);
+		src = get_text(src, &dst[i].name_en);
+		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
+		src = get_field(src, &dst[i].idx1, header.rb_idx_size, 1);
+		src = get_field(src, &dst[i].idx2, header.rb_idx_size, 1);
+		src = get_field(src, &dst[i].pos, sizeof(float), 3);
+		src = get_field(src, &dst[i].rot, sizeof(float), 3);
+		src = get_field(src, &dst[i].pos_limit, sizeof(float), 6);
+		src = get_field(src, &dst[i].rot_limit, sizeof(float), 6);
+		src = get_field(src, &dst[i].spring_pos, sizeof(float), 3);
+		src = get_field(src, &dst[i].spring_rot, sizeof(float), 3);
 	}
 
 	return src;
@@ -570,12 +723,39 @@ uint8_t pmx_parse(const char *src, PMXModel *dst)
 	src = pmx_parse_bone(src, bones, bone_count);
 	assert(bones);
 
-	
-	free(bones);
-	free(texs);	
-	free(faces);
-	free(verts);
+	uint32_t morph_count;
+	src = get_field(src, &morph_count, sizeof(morph_count), 1);
+	DBG_LOG("morph_count: %u\n", morph_count);
+	PMXMorph *morphs = calloc(morph_count, sizeof(PMXMorph));
+	src = pmx_parse_morph(src, morphs, morph_count);
+	assert(morphs);
+
+	uint32_t frame_count;
+	src = get_field(src, &frame_count, sizeof(frame_count), 1);
+	DBG_LOG("Frame count: %u\n", frame_count);
+	PMXFrame *frames = calloc(frame_count, sizeof(PMXFrame));
+	src = pmx_parse_frame(src, frames, frame_count);
+	assert(frames);
+
+	uint32_t rigidbody_count;
+	src = get_field(src, &rigidbody_count, sizeof(rigidbody_count), 1);
+	DBG_LOG("Rigidbody count: %u\n", rigidbody_count);
+	PMXRigidBody *rigidbodies = calloc(rigidbody_count, sizeof(PMXRigidBody));
+	src = pmx_parse_rigidbody(src, rigidbodies, rigidbody_count);
+	assert(rigidbodies);
+
+	uint32_t joint_count;
+	src = get_field(src, &joint_count, sizeof(rigidbody_count), 1);
+	DBG_LOG("Rigidbody count: %u\n", joint_count);
+	PMXJoint *joints = calloc(joint_count, sizeof(PMXJoint));
+	src = pmx_parse_joint(src, joints, joint_count);
+	assert(joints);
+
 	return 0;
+}
+
+void pmx_free(PMXModel *model)
+{
 }
 
 int main(void)
