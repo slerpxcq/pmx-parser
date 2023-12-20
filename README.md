@@ -1,6 +1,6 @@
 # pmx-parser
 PMX model parser in C\
-See [pmx_parser.h](pmx_parser.h) for struct definitions.
+See [pmx_model.h](pmx_model.h) for struct definitions.
 ## Usage
 ```C
 	PMXModel model;
