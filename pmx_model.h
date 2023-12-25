@@ -7,15 +7,14 @@
 #include <string.h>
 #include <assert.h>
 
-#define NDEBUG
-#ifdef NDEBUG
-#define DBG_LOG(...) fprintf(stderr, __VA_ARGS__)
-#else
-#define DBG_LOG(...)
-#endif
-
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+#ifdef NDEBUG
+#define TRACE(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define TRACE(...)
+#endif
 
 #define MAX_TEXT_LEN 64
 #define ERROR_MSG_LEN 128
@@ -97,7 +96,7 @@ typedef struct
 
 typedef struct 
 {
-	uint32_t indicies[3];
+	uint32_t indices[3];
 } PMXFace;
 
 typedef struct 
@@ -307,11 +306,11 @@ typedef struct
 	uint32_t idx2;
 	float pos[3];
 	float rot[3];
-	struct __attribute__((packed)) {
+	struct {
 		float lower[3];
 		float upper[3];
 	} pos_limit;
-	struct __attribute__((packed)) {
+	struct {
 		float lower[3];
 		float upper[3];
 	} rot_limit;
@@ -324,7 +323,7 @@ typedef struct
 	PMXHeader header;
 	PMXInfo info;
 	uint32_t vertex_count;
-	PMXVert *verticies;
+	PMXVert *vertices;
 	uint32_t face_count;
 	PMXFace *faces;
 	uint32_t texture_count;
@@ -343,7 +342,7 @@ typedef struct
 	PMXJoint *joints;
 } PMXModel;
 
-uint8_t pmx_parse(const char *src, PMXModel *dst);
+int pmx_parse(const char *src, PMXModel *dst);
 void pmx_free(PMXModel *model);
 const char *pmx_get_error_msg(void);
 

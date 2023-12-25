@@ -2,27 +2,51 @@
 
 static char error_msg[ERROR_MSG_LEN];
 
-static const char *get_field(const char *src, void *dst, size_t size, size_t count)
+static const char *get_field(const char *src, void *dst, size_t src_size, size_t count)
 {
 	for (size_t i = 0; i < count; ++i) {
-		switch (size) {
-			case 1:
-				*(uint8_t *)dst = *(uint8_t *)src;
-				src += sizeof(uint8_t);
-				break;
-			case 2: 
-				*(uint16_t *)dst = *(uint16_t *)src;
-				src += sizeof(uint16_t);
-				break;
-			case 4: 
-				*(uint32_t *)dst = *(uint32_t *)src;
-				src += sizeof(uint32_t);
-				break;
-			default:	
-				return NULL;
+		switch (src_size) {
+		case 1:
+			*(uint8_t *)dst = *(uint8_t *)src;
+			src += 1;
+			dst += 1;
+			break;
+		case 2: 
+			*(uint16_t *)dst = *(uint16_t *)src;
+			src += 2;
+			dst += 2;
+			break;
+		case 4:
+			*(uint32_t *)dst = *(uint32_t *)src;
+			src += 4;
+			dst += 4;
+			break;
 		}
 	}
-	
+				
+	return src;
+}
+
+static const char *get_field2(const char *src, void *dst, size_t src_size, size_t dst_size, size_t count) 
+{
+	for (size_t i = 0; i < count; ++i) {
+		switch (src_size) {
+		case 1:
+			*(uint8_t *)dst = *(uint8_t *)src;
+			src += 1;
+			break;
+		case 2: 
+			*(uint16_t *)dst = *(uint16_t *)src;
+			src += 2;
+			break;
+		case 4:
+			*(uint32_t *)dst = *(uint32_t *)src;
+			src += 4;
+			break;
+		}
+		dst += dst_size;
+	}
+
 	return src;
 }
 
@@ -57,18 +81,18 @@ static const char *pmx_parse_vert(const char *src, const PMXHeader *header, PMXV
 		size_t idx_size = header->bone_idx_size;
 		switch (dst[i].weight_type) {
 			case BDEF1:
-				src = get_field(src, &dst[i].weight.bdef1.idx0, idx_size, 1); 
+				src = get_field2(src, &dst[i].weight.bdef1.idx0, idx_size, sizeof(uint32_t), 1); 
 				break;
 			case BDEF2:
-				src = get_field(src, &dst[i].weight.bdef2.idx0, idx_size, 2);
+				src = get_field2(src, &dst[i].weight.bdef2.idx0, idx_size, sizeof(uint32_t), 2);
 				src = get_field(src, &dst[i].weight.bdef2.w0, sizeof(float), 1); 
 				break;
 			case BDEF4:
-				src = get_field(src, dst[i].weight.bdef4.idx, idx_size, 4);
+				src = get_field2(src, dst[i].weight.bdef4.idx, idx_size, sizeof(uint32_t), 4);
 				src = get_field(src, dst[i].weight.bdef4.w, sizeof(float), 4);
 				break;
 			case SDEF:
-				src = get_field(src, &dst[i].weight.sdef.idx0, idx_size, 2);
+				src = get_field2(src, &dst[i].weight.sdef.idx0, idx_size, sizeof(uint32_t), 2);
 				src = get_field(src, &dst[i].weight.sdef.w0, sizeof(float), 1);
 				src = get_field(src, &dst[i].weight.sdef.c, sizeof(float), 9);
 				break;
@@ -83,7 +107,8 @@ static const char *pmx_parse_vert(const char *src, const PMXHeader *header, PMXV
 
 static const char *pmx_parse_face(const char *src, const PMXHeader *header, PMXFace *dst, size_t count)
 {
-	src = get_field(src, dst, header->vert_idx_size, 3 * count);
+	for (size_t i = 0; i < count; ++i)
+		src = get_field2(src, &dst[i].indices, header->vert_idx_size, sizeof(uint32_t), 3);
 	return src;
 }
 
@@ -106,12 +131,12 @@ static const char *pmx_parse_mat(const char *src, const PMXHeader *header, PMXMa
 		src = get_field(src, &dst[i].draw_mode, sizeof(uint8_t), 1);
 		src = get_field(src, dst[i].edge, sizeof(float), 4);
 		src = get_field(src, &dst[i].edge_size, sizeof(float), 1);
-		src = get_field(src, &dst[i].tex_idx, header->tex_idx_size, 1);
-		src = get_field(src, &dst[i].env_idx, header->tex_idx_size, 1);
+		src = get_field2(src, &dst[i].tex_idx, header->tex_idx_size, sizeof(uint32_t), 1);
+		src = get_field2(src, &dst[i].env_idx, header->tex_idx_size, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].env_mode, sizeof(uint8_t), 1);
 	        src = get_field(src, &dst[i].toon_mode, sizeof(uint8_t), 1);
-		src = get_field(src, &dst[i].toon_idx, 
-			dst[i].toon_mode == TOON_TEX ? header->tex_idx_size : 1, 1);
+		src = get_field2(src, &dst[i].toon_idx, 
+			dst[i].toon_mode == TOON_TEX ? header->tex_idx_size : 1, sizeof(uint32_t), 1);
 		src = get_text(src, &dst[i].memo);
 		src = get_field(src, &dst[i].face_count, sizeof(uint32_t), 1);
 	}
@@ -122,7 +147,7 @@ static const char *pmx_parse_mat(const char *src, const PMXHeader *header, PMXMa
 static const char *pmx_parse_ik(const char *src, const PMXHeader *header, PMXIKLink *dst, size_t count)
 {
 	for (size_t i = 0; i < count; ++i) {
-		src = get_field(src, &dst[i].idx, header->bone_idx_size, 1);
+		src = get_field2(src, &dst[i].idx, header->bone_idx_size, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].has_limit, sizeof(uint8_t), 1);
 		if (dst[i].has_limit) {
 			src = get_field(src, &dst[i].limit.lower, sizeof(float), 3);
@@ -139,18 +164,18 @@ static const char *pmx_parse_bone(const char *src, const PMXHeader *header, PMXB
 		src = get_text(src, &dst[i].name_jp);
 		src = get_text(src, &dst[i].name_en);
 		src = get_field(src, dst[i].pos, sizeof(float), 3);
-		src = get_field(src, &dst[i].parent, header->bone_idx_size, 1);
+		src = get_field2(src, &dst[i].parent, header->bone_idx_size, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].transform_layer, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].flags, sizeof(uint16_t), 1);
 
 		uint16_t flags = dst[i].flags;
 		if (flags & BONE_FLAG_CONNECTED) 
-			src = get_field(src, &dst[i].tip.target, header->bone_idx_size, 1);
+			src = get_field2(src, &dst[i].tip.target, header->bone_idx_size, sizeof(uint32_t), 1);
 		else
 			src = get_field(src, &dst[i].tip.offset, sizeof(float), 3);
 		
 		if (flags & BONE_FLAG_LINK_ROTATION || flags & BONE_FLAG_LINK_MOVE) {
-			src = get_field(src, &dst[i].link.idx, header->bone_idx_size, 1);
+			src = get_field2(src, &dst[i].link.idx, header->bone_idx_size, sizeof(uint32_t), 1);
 			src = get_field(src, &dst[i].link.rate, sizeof(float), 1);
 		}
 
@@ -166,7 +191,7 @@ static const char *pmx_parse_bone(const char *src, const PMXHeader *header, PMXB
 			src = get_field(src, &dst[i].ext_parent_key, sizeof(uint32_t), 1);
 
 		if (flags & BONE_FLAG_IK) {
-			src = get_field(src, &dst[i].ik.idx, header->bone_idx_size, 1);
+			src = get_field2(src, &dst[i].ik.idx, header->bone_idx_size, sizeof(uint32_t), 1);
 			src = get_field(src, &dst[i].ik.loop, sizeof(uint32_t), 1);
 			src = get_field(src, &dst[i].ik.limit_angle, sizeof(float), 1);
 			src = get_field(src, &dst[i].ik.link_count, sizeof(uint32_t), 1);
@@ -188,15 +213,15 @@ static const char *pmx_parse_morph_offset(const char *src, const PMXHeader *head
 		switch (type) {
 			case MORPH_TYPE_GROUP:
 			case MORPH_TYPE_FLIP:
-				src = get_field(src, &dst[i].group_flip.idx, header->rb_idx_size, 1);
+				src = get_field2(src, &dst[i].group_flip.idx, header->rb_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].group_flip.rate, sizeof(uint8_t), 1);
 				break;
 			case MORPH_TYPE_VERTEX:
-				src = get_field(src, &dst[i].vertex.idx, header->vert_idx_size, 1);
+				src = get_field2(src, &dst[i].vertex.idx, header->vert_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].vertex.offset, sizeof(float), 3);
 				break;
 			case MORPH_TYPE_BONE:
-				src = get_field(src, &dst[i].bone.idx, header->bone_idx_size, 1);
+				src = get_field2(src, &dst[i].bone.idx, header->bone_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].bone.move, sizeof(float), 3);
 				src = get_field(src, &dst[i].bone.rotation, sizeof(float), 4);
 				break;
@@ -205,11 +230,11 @@ static const char *pmx_parse_morph_offset(const char *src, const PMXHeader *head
 			case MORPH_TYPE_ADD_UV_2:
 			case MORPH_TYPE_ADD_UV_3:
 			case MORPH_TYPE_ADD_UV_4:
-				src = get_field(src, &dst[i].uv.idx, header->vert_idx_size, 1);
+				src = get_field2(src, &dst[i].uv.idx, header->vert_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].uv.offset, sizeof(float), 4);
 				break;
 			case MORPH_TYPE_MATERIAL:
-				src = get_field(src, &dst[i].material.idx, header->mat_idx_size, 1);
+				src = get_field2(src, &dst[i].material.idx, header->mat_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].material.method, sizeof(uint8_t), 1);
 				src = get_field(src, &dst[i].material.diffuse, sizeof(float), 4);
 				src = get_field(src, &dst[i].material.specular, sizeof(float), 3);
@@ -222,7 +247,7 @@ static const char *pmx_parse_morph_offset(const char *src, const PMXHeader *head
 				src = get_field(src, &dst[i].material.toon_tint, sizeof(float), 4);
 				break;
 			case MORPH_TYPE_IMPULSE:
-				src = get_field(src, &dst[i].impulse.idx, header->rb_idx_size, 1);
+				src = get_field2(src, &dst[i].impulse.idx, header->rb_idx_size, sizeof(uint32_t), 1);
 				src = get_field(src, &dst[i].impulse.local, sizeof(uint8_t), 1);
 				src = get_field(src, &dst[i].impulse.velocity, sizeof(float), 3);
 				src = get_field(src, &dst[i].impulse.torque, sizeof(float), 3);
@@ -260,10 +285,10 @@ static const char *pmx_parse_frame_elem(const char *src, const PMXHeader *header
 		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
 		switch (dst[i].type) {
 		case FRAME_ELEM_TYPE_BONE:
-			src = get_field(src, &dst[i].idx, header->bone_idx_size, 1);
+			src = get_field2(src, &dst[i].idx, header->bone_idx_size, sizeof(uint32_t), 1);
 			break;
 		case FRAME_ELEM_TYPE_MORPH:
-			src = get_field(src, &dst[i].idx, header->morph_idx_size, 1);
+			src = get_field2(src, &dst[i].idx, header->morph_idx_size, sizeof(uint32_t), 1);
 			break;
 		default:
 			return NULL;
@@ -296,7 +321,7 @@ static const char *pmx_parse_rigidbody(const char *src, const PMXHeader *header,
 	for (size_t i = 0; i < count; ++i) {
 		src = get_text(src, &dst[i].name_jp);
 		src = get_text(src, &dst[i].name_en);
-		src = get_field(src, &dst[i].bone_idx, header->bone_idx_size, 1);
+		src = get_field2(src, &dst[i].bone_idx, header->bone_idx_size, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].group, sizeof(uint8_t), 1);
 		src = get_field(src, &dst[i].no_collide_group, sizeof(uint16_t), 1);
 		src = get_field(src, &dst[i].shape, sizeof(uint8_t), 1);
@@ -320,12 +345,14 @@ static const char *pmx_parse_joint(const char *src, const PMXHeader *header, PMX
 		src = get_text(src, &dst[i].name_jp);
 		src = get_text(src, &dst[i].name_en);
 		src = get_field(src, &dst[i].type, sizeof(uint8_t), 1);
-		src = get_field(src, &dst[i].idx1, header->rb_idx_size, 1);
-		src = get_field(src, &dst[i].idx2, header->rb_idx_size, 1);
+		src = get_field2(src, &dst[i].idx1, header->rb_idx_size, sizeof(uint32_t), 1);
+		src = get_field2(src, &dst[i].idx2, header->rb_idx_size, sizeof(uint32_t), 1);
 		src = get_field(src, &dst[i].pos, sizeof(float), 3);
 		src = get_field(src, &dst[i].rot, sizeof(float), 3);
-		src = get_field(src, &dst[i].pos_limit, sizeof(float), 6);
-		src = get_field(src, &dst[i].rot_limit, sizeof(float), 6);
+		src = get_field(src, &dst[i].pos_limit.lower, sizeof(float), 3);
+		src = get_field(src, &dst[i].pos_limit.upper, sizeof(float), 3);
+		src = get_field(src, &dst[i].rot_limit.lower, sizeof(float), 3);
+		src = get_field(src, &dst[i].rot_limit.upper, sizeof(float), 3);
 		src = get_field(src, &dst[i].spring_pos, sizeof(float), 3);
 		src = get_field(src, &dst[i].spring_rot, sizeof(float), 3);
 	}
@@ -333,22 +360,22 @@ static const char *pmx_parse_joint(const char *src, const PMXHeader *header, PMX
 	return src;
 }
 
-uint8_t pmx_parse(const char *src, PMXModel *dst)
+int pmx_parse(const char *src, PMXModel *dst)
 {
-	DBG_LOG(" ********** PMX Parser **********\n");
+	TRACE(" ********** PMX Parser **********\n");
 	if (strncmp(src, "PMX ", 4)) {
 		snprintf(error_msg, ERROR_MSG_LEN, "Not a pmx file\n");
-		return 1;
+		return -1;
 	}
 	memcpy(&dst->header, src, sizeof(dst->header));
 	if (dst->header.uv_count > 0) {
 		snprintf(error_msg, ERROR_MSG_LEN, "Additional UV is unsupported\n");
-		return 1;
+		return -1;
 	}
 	src += sizeof(dst->header);
 	src = pmx_parse_info(src, &dst->info);
 
-	dst->verticies = NULL;
+	dst->vertices = NULL;
 	dst->faces = NULL;
 	dst->textures = NULL;
 	dst->materials = NULL;
@@ -359,74 +386,96 @@ uint8_t pmx_parse(const char *src, PMXModel *dst)
 	dst->joints = NULL;
 
 	src = get_field(src, &dst->vertex_count, sizeof(dst->vertex_count), 1);
-	DBG_LOG("Vertex count: %u\n", dst->vertex_count);
-	dst->verticies = calloc(dst->vertex_count, sizeof(PMXVert));
-	src = pmx_parse_vert(src, &dst->header, dst->verticies, dst->vertex_count);
+	TRACE("Vertex count: %u\n", dst->vertex_count);
+	dst->vertices = calloc(dst->vertex_count, sizeof(PMXVert));
+	src = pmx_parse_vert(src, &dst->header, dst->vertices, dst->vertex_count);
 	if (!src) {
-		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse verticies\n");
-		return 1;
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse vertices\n");
+		return -1;
 	}
 
 	src = get_field(src, &dst->face_count, sizeof(dst->face_count), 1);
 	dst->face_count /= 3;
-	DBG_LOG("Face count: %u\n", dst->face_count);
+	TRACE("Face count: %u\n", dst->face_count);
 	dst->faces = calloc(dst->face_count, sizeof(PMXFace));
 	src = pmx_parse_face(src, &dst->header, dst->faces, dst->face_count);
 	if (!src) {
 		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse faces\n");
-		return 1;
+		return -1;
 	}
 
 	src = get_field(src, &dst->texture_count, sizeof(dst->texture_count), 1);
-	DBG_LOG("Texture count: %u\n", dst->texture_count);
+	TRACE("Texture count: %u\n", dst->texture_count);
 	dst->textures = calloc(dst->texture_count, sizeof(PMXTex));
 	src = pmx_parse_tex(src, dst->textures, dst->texture_count);
-	assert(src);
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse textures\n");
+		return -1;
+	}
 
 	src = get_field(src, &dst->material_count, sizeof(dst->material_count), 1);
-	DBG_LOG("Material count: %u\n", dst->material_count);
+	TRACE("Material count: %u\n", dst->material_count);
 	dst->materials= calloc(dst->material_count, sizeof(PMXMat));
 	src = pmx_parse_mat(src, &dst->header, dst->materials, dst->material_count);
-	assert(src);
-
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse materials\n");
+		return -1;
+	}
+	
 	src = get_field(src, &dst->bone_count, sizeof(dst->bone_count), 1);
-	DBG_LOG("Bone count: %u\n", dst->bone_count);
+	TRACE("Bone count: %u\n", dst->bone_count);
 	dst->bones = calloc(dst->bone_count, sizeof(PMXBone));
 	src = pmx_parse_bone(src, &dst->header, dst->bones, dst->bone_count);
-	assert(src);
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse bones\n");
+		return -1;
+	}
 
 	src = get_field(src, &dst->morph_count, sizeof(dst->morph_count), 1);
-	DBG_LOG("Morph count: %u\n", dst->morph_count);
+	TRACE("Morph count: %u\n", dst->morph_count);
 	dst->morphs = calloc(dst->morph_count, sizeof(PMXMorph));
 	src = pmx_parse_morph(src, &dst->header, dst->morphs, dst->morph_count);
-	assert(src);
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse bones\n");
+		return -1;
+	}
 
 	src = get_field(src, &dst->frame_count, sizeof(dst->frame_count), 1);
-	DBG_LOG("Frame count: %u\n", dst->frame_count);
+	TRACE("Frame count: %u\n", dst->frame_count);
 	dst->frames = calloc(dst->frame_count, sizeof(PMXFrame));
 	src = pmx_parse_frame(src, &dst->header, dst->frames, dst->frame_count);
-	assert(src);
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse frames\n");
+		return -1;
+	}
 
 	src = get_field(src, &dst->rigidbody_count, sizeof(dst->rigidbody_count), 1);
-	DBG_LOG("Rigidbody count: %u\n", dst->rigidbody_count);
+	TRACE("Rigidbody count: %u\n", dst->rigidbody_count);
 	dst->rigidbodies = calloc(dst->rigidbody_count, sizeof(PMXRigidBody));
 	src = pmx_parse_rigidbody(src, &dst->header, dst->rigidbodies, dst->rigidbody_count);
-	assert(src);
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse rigidbodies\n");
+		return -1;
+	}
 
 	src = get_field(src, &dst->joint_count, sizeof(dst->joint_count), 1);
-	DBG_LOG("Joint count: %u\n", dst->joint_count);
+	TRACE("Joint count: %u\n", dst->joint_count);
 	dst->joints = calloc(dst->joint_count, sizeof(PMXJoint));
 	src = pmx_parse_joint(src, &dst->header, dst->joints, dst->joint_count);
-	assert(src);
-
+	if (!src) {
+		snprintf(error_msg, ERROR_MSG_LEN, "Failed to parse joints\n");
+		return -1;
+	}
+	
+	TRACE(" ********** Parse OK **********\n");
 	return 0;
 }
 
 void pmx_free(PMXModel *model)
 {
-	if (model->verticies) {
-		free(model->verticies);
-		model->verticies = NULL;
+	if (model->vertices) {
+		free(model->vertices);
+		model->vertices = NULL;
 	}
 
 	if (model->faces) {
